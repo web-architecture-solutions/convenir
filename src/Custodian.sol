@@ -235,6 +235,4 @@ contract Custodian is EnclaveService, ERC721, Ownable {
         // This may involve retrieving the full attestation from off-chain storage and performing the verification
         return package.verified;
     }
-
-    // ... other Custodian-specific functions (e.g., interacting with Ocean Protocol) ...
 }

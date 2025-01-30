@@ -294,6 +294,4 @@ contract Courier is EnclaveService, ERC721 {
         // 4. Return the processed data.
         return computationResult;
     }
-
-    // ... other Courier-specific functions (e.g., staking, slashing) ...
 }
