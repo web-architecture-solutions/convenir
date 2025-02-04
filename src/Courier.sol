@@ -1,20 +1,14 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.17;
+// SPDX-License-Identifier: MIT pragma solidity ^0.8.17;
 
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@api3/contracts/v0.8/interfaces/IProxy.sol";
-import "./EnclaveService.sol";
-import "./ICustodian.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol"; 
+import "./EnclaveService.sol"; 
+import "@api3/contracts/v0.8/interfaces/IProxy.sol"; 
+import "./ICustodian.sol"; 
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-/**
- * @title Courier
- * @dev A specialized EnclaveService for fetching and processing external data using API3.
- */
-contract Courier is EnclaveService, ERC721URIStorage {
-    using ECDSA for bytes32;
-
+contract Courier is EnclaveService, ERC721URIStorage { 
+    using ECDSA for bytes32; 
+    
     struct Request {
         address requester;
         bytes inputData;
@@ -26,7 +20,7 @@ contract Courier is EnclaveService, ERC721URIStorage {
     struct CertifiedPayload {
         uint256 payloadId;
         bytes32 requestId;
-        bytes32 attestationHash; // Verified TEE attestation hash
+        bytes32 attestationHash;
         string metadataURI;
         bool verified;
     }
@@ -35,58 +29,42 @@ contract Courier is EnclaveService, ERC721URIStorage {
     mapping(uint256 => CertifiedPayload) public certifiedPayloads;
     mapping(bytes32 => bool) public fulfilledRequestIds;
 
-    // The API3 proxy contract address (also used as the expected signer for API3 responses)
+    // The API3 proxy address (used for making requests and verifying API3 signatures)
     address public immutable api3Proxy;
     uint256 public nextPayloadId;
+
+    // Optional: interface to a Custodian contract
     ICustodian public custodian;
+
     uint256 public constant REQUEST_EXPIRATION_TIME = 5 minutes;
 
-    // Events
     event RequestMade(bytes32 indexed requestId, address indexed requester, bytes inputData);
     event RequestFulfilled(bytes32 indexed requestId, uint256 indexed payloadId, bytes signedData);
     event CertifiedPayloadMinted(uint256 indexed payloadId, address owner, string metadataURI, bytes32 attestationHash);
 
-    /**
-     * @dev Constructor.
-     * @param _api3Proxy Address of the API3 proxy contract.
-     * @param _teeSigner Address of the TEE signer (used to verify attestation).
-     */
-    constructor(address _api3Proxy, address _teeSigner)
+    // Constructor: sets the API3 proxy and passes the TEE signer and initial attestation config to the base contract
+    constructor(address _api3Proxy, address teeSigner, AttestationConfig memory initialConfig)
         ERC721("CertifiedPayload", "CPAY")
-        EnclaveService(_teeSigner)
+        EnclaveService(teeSigner, initialConfig)
     {
         api3Proxy = _api3Proxy;
         nextPayloadId = 1;
     }
 
-    /**
-     * @dev Sets the Custodian contract address.
-     * @param _custodian The address of the Custodian contract.
-     */
+    // Allows the owner to set the custodian address (if used)
     function setCustodian(address _custodian) external onlyOwner {
         custodian = ICustodian(_custodian);
     }
 
-    /**
-     * @dev Makes a request to the API3 Airnode.
-     * @param _airnode Address of the API3 Airnode.
-     * @param _endpointId Identifier of the endpoint to call.
-     * @param _encodedParameters Encoded parameters for the request.
-     * @param _inputData Additional input data for the computation.
-     */
+    // Function for making a request to an API3 Airnode.
+    // Forwards the request to the API3 proxy.
     function makeRequest(
         address _airnode,
         bytes32 _endpointId,
         bytes calldata _encodedParameters,
         bytes calldata _inputData
     ) external payable {
-        // If a Custodian is used, ensure the caller is authorized.
-        require(
-            custodian == ICustodian(address(0)) || custodian.isAuthorized(msg.sender),
-            "Caller is not authorized"
-        );
-
-        // Forward the request to the API3 proxy.
+        require(custodian == ICustodian(address(0)) || custodian.isAuthorized(msg.sender), "Caller is not authorized");
         (bool success, bytes memory returndata) = api3Proxy.call{value: msg.value}(
             abi.encodeWithSelector(
                 IProxy(api3Proxy).makeRequest.selector,
@@ -98,11 +76,7 @@ contract Courier is EnclaveService, ERC721URIStorage {
             )
         );
         require(success, "API3 request failed");
-
-        // Decode the returned request ID.
         bytes32 requestId = abi.decode(returndata, (bytes32));
-
-        // Store the request details.
         requests[requestId] = Request({
             requester: msg.sender,
             inputData: _inputData,
@@ -110,18 +84,15 @@ contract Courier is EnclaveService, ERC721URIStorage {
             fulfilled: false,
             validUntil: block.timestamp + REQUEST_EXPIRATION_TIME
         });
-
         emit RequestMade(requestId, msg.sender, _inputData);
     }
 
-    /**
-     * @dev Callback to receive the API3 response and the TEE attestation.
-     * @param requestId Identifier of the API3 request.
-     * @param data Data returned by the API3 Airnode.
-     * @param api3Signature Signature over the API3 data.
-     * @param teeAttestation The attestation produced by the Oasis TEE.
-     * @param teeAttestationSignature Signature over the TEE attestation.
-     */
+    // fulfill is the callback function invoked by the API3 proxy.
+    // It accepts:
+    //   - API3 data and its signature,
+    //   - The off-chain produced TEE attestation and its signature.
+    // It verifies the API3 signature, then calls recordAttestation to verify the TEE attestation,
+    // processes the data, and mints a Certified Payload NFT.
     function fulfill(
         bytes32 requestId,
         bytes calldata data,
@@ -132,62 +103,39 @@ contract Courier is EnclaveService, ERC721URIStorage {
         require(msg.sender == api3Proxy, "Fulfill: Caller must be API3 Proxy");
         require(!fulfilledRequestIds[requestId], "Request already fulfilled");
         fulfilledRequestIds[requestId] = true;
-
-        Request storage request = requests[requestId];
-        require(block.timestamp <= request.validUntil, "Request expired");
-
-        // Verify the API3 signature explicitly.
+        Request storage req = requests[requestId];
+        require(block.timestamp <= req.validUntil, "Request expired");
         require(verifySignature(data, api3Signature, api3Proxy), "Invalid API3 signature");
-
-        // Mark request as fulfilled.
-        request.fulfilled = true;
-        request.signedData = data;
-
-        // (Optional) Process the data via TEE if needed.
-        bytes memory teeResult = processInTEE(data, request.inputData);
-        string memory result = string(teeResult); // For example, used as NFT metadata
-
-        // **Key change:** Instead of simulating attestation, record the externally produced attestation.
+        req.fulfilled = true;
+        req.signedData = data;
+        // Process data via off-chain TEE computation simulation
+        bytes memory teeResult = processInTEE(data, req.inputData);
+        string memory resultMetadata = string(teeResult);
+        // Record the off-chain attestation
         bytes32 attestationHash = recordAttestation(teeAttestation, teeAttestationSignature);
-
-        // Create the Certified Payload NFT.
-        uint256 payloadId = createOutputNFT(request.requester, result, attestationHash);
+        uint256 payloadId = createOutputNFT(req.requester, resultMetadata, attestationHash);
         certifiedPayloads[payloadId] = CertifiedPayload({
             payloadId: payloadId,
             requestId: requestId,
             attestationHash: attestationHash,
-            metadataURI: result,
-            verified: true // Mark as verified upon creation
+            metadataURI: resultMetadata,
+            verified: true
         });
-
         emit RequestFulfilled(requestId, payloadId, data);
-        emit CertifiedPayloadMinted(payloadId, request.requester, result, attestationHash);
+        emit CertifiedPayloadMinted(payloadId, req.requester, resultMetadata, attestationHash);
     }
 
-    /**
-     * @dev Simulated confidential computation.
-     * In a production system, the TEE would perform this off–chain.
-     * @param apiData Data from API3.
-     * @param inputData Additional input data.
-     * @return The computation result.
-     */
+    // processInTEE simulates confidential computation by combining API3 data with inputData.
+    // In production, the off-chain TEE would perform the computation and return a result.
     function processInTEE(
         bytes memory apiData,
         bytes memory inputData
     ) internal returns (bytes memory) {
-        // Here you would normally transfer data to/from the TEE.
-        // For demonstration, we simply hash the combined data.
-        bytes memory combinedData = abi.encodePacked(apiData, inputData);
-        return abi.encodePacked(keccak256(combinedData));
+        bytes memory combined = abi.encodePacked(apiData, inputData);
+        return abi.encodePacked(keccak256(combined));
     }
 
-    /**
-     * @dev Mints a Certified Payload NFT.
-     * @param owner The NFT owner.
-     * @param metadataURI The NFT metadata URI.
-     * @param attestationHash The hash of the verified TEE attestation.
-     * @return The new NFT's ID.
-     */
+    // Implementation of abstract createOutputNFT: mints an ERC721 token representing a Certified Payload.
     function createOutputNFT(
         address owner,
         string memory metadataURI,
@@ -200,13 +148,14 @@ contract Courier is EnclaveService, ERC721URIStorage {
         return payloadId;
     }
 
-    /**
-     * @dev Core computation logic.
-     * For demonstration, simply returns the input.
-     * @param inputData The input data.
-     * @return The computation result.
-     */
+    // Returns the expected code hash from the SGX attestation.
+    // For demonstration, this returns a fixed value. In production, this should be set appropriately.
+    function getExpectedCodeHash() internal view override returns (bytes32) {
+        return 0x0000000000000000000000000000000000000000000000000000000000000000;
+    }
+
+    // Core computation logic; here it simply returns the input data.
     function compute(bytes memory inputData) external override returns (bytes memory) {
-        return abi.encode(inputData);
+        return inputData;
     }
 }
