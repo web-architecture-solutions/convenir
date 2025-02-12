@@ -158,11 +158,4 @@ contract Courier is EnclaveService, ERC721URIStorage, Ownable, IRequestor {
     function getExpectedCodeHash() internal view override returns (bytes32) {
         return 0x0000000000000000000000000000000000000000000000000000000000000000; // Placeholder
     }
-
-    // The compute function is no longer needed, as the core logic is in processInTEE,
-    // which is called by fulfill.
-    // function compute(bytes memory inputData, bytes32 inputCommitmentHash) external override returns (bytes memory) {
-    //     require(keccak256(inputData) == inputCommitmentHash);
-    //     return inputData;
-    // }
 }
