@@ -16,12 +16,12 @@
   },
   "dependencies": {
     "@api3/contracts": "^0.8.0",
-    "@openzeppelin/contracts": "^4.9.3",
     "@oceanprotocol/contracts": "^1.0.0-next.12",
-    "ethers": "^5.7.2",
+    "@openzeppelin/contracts": "^4.9.6",
+    "ethers": "^6.9.1",
     "libsodium-wrappers": "^0.7.13",
-    "uuid": "^9.0.0",
-     "parcel": "^2.9.3"
+    "parcel": "^2.9.3",
+    "uuid": "^9.0.0"
   },
   "keywords": [
     "convenir",
