@@ -1,19 +1,39 @@
 {
-  "name": "nodejs-sandbox",
+  "name": "convenir-project",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Convenir: Trusted Serverless Compute Platform",
   "scripts": {
-    "start": "node --watch index.js"
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy": "npx hardhat run scripts/deploy.js",
+    "node": "npx hardhat node",
+    "build:client": "parcel build src/convenir.js --target node --out-file convenir.js",
+    "prepublishOnly": "npm run build:client"
   },
-  "keywords": [],
-  "author": "Ives van Hoorne",
-  "license": "MIT",
   "devDependencies": {
-    "@api3/contracts": "^16.4.0",
-    "@oasisprotocol/sapphire-paratime": "^1.3.2",
-    "@oceanprotocol/contracts": "^2.2.1",
-    "@openzeppelin/contracts-upgradeable": "^5.2.0",
-    "hardhat": "^2.22.18"
-  }
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.4"
+  },
+  "dependencies": {
+    "@api3/contracts": "^0.8.0",
+    "@openzeppelin/contracts": "^4.9.3",
+    "@oceanprotocol/contracts": "^1.0.0-next.12",
+    "ethers": "^5.7.2",
+    "libsodium-wrappers": "^0.7.13",
+    "uuid": "^9.0.0",
+     "parcel": "^2.9.3"
+  },
+  "keywords": [
+    "convenir",
+    "serverless",
+    "trusted compute",
+    "web3",
+    "oasis",
+    "ocean protocol",
+    "api3",
+    "blockchain",
+    "tee"
+  ],
+  "author": "Your Name/Team Name",
+  "license": "MIT"
 }
